@@ -348,6 +348,7 @@ typedef uint64 *pagetable_t; // 512 PTEs
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 
 #define PTE2PA(pte) (((pte) >> 10) << 12)
+#define PTE_PG (1L << 9)
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 

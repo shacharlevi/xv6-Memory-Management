@@ -1,24 +1,17 @@
 #include "ustack.h"
 #include "user/user.h"
-#include "riscv.h"
 
 static void *top = 0;
 static void* base = 0;
-static int counter = -1;
 static uint prevLen = 0;
+
 void *ustack_malloc(uint len)
 {
     if (len > 512)
     {
         return (void *)-1;
     }
-    /*if (counter >= PGSIZE)
-    {
-        return (void *)-1;
-    }*/
-
-    // uint nUnits = (len + sizeof(Header) - 1) / sizeof(Header) + 1;
-    // Header *pointer = (Header *)sbrk(nUnits * sizeof(Header));
+  
     void *pointerLen = (void *)sbrk(8);
     if (pointerLen == (void *)-1)
     {
@@ -39,6 +32,8 @@ void *ustack_malloc(uint len)
     return pointer;
 }
 
+
+
 int ustack_free(void)
 {
     if(base == 0){
@@ -58,29 +53,8 @@ int ustack_free(void)
         top = 0;
         base = 0;
     } else {
-        top = (void*)((char*)newTop - prevLen);
+        top = (void*)((char*)top - 8 - prevLen);
     }
-    /*Header *p;
-    int ret;
-    if (counter == -1)
-    {
-        return -1;
-    }
-
-    if (top == 0)
-    { // if empty
-        return -1;
-    }
-    p = top;
-    ret = (p->s.size - 1) * sizeof(Header);
-    if (top->s.ptr == 0)
-    {
-        top = 0;
-    }
-    else
-    {
-        top = p->s.ptr;
-    }
-    counter--;
-    return ret;*/
+  
+    return len;
 }

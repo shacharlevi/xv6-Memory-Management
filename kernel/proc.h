@@ -118,4 +118,6 @@ struct proc
   char name[16];               // Process name (debugging)
 
   struct file *swapFile;
+  uint  isSwapped[MAX_TOTAL_PAGES];   // addresses ;
+  uint  pages_count;                  // = 0; 
 };

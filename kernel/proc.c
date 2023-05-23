@@ -124,8 +124,13 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  //ADDED 4.2
+p->pages_count=0;
+for(int i=0;i<MAX_TOTAL_PAGES;i++){
+  p->isSwapped[i]=0;
+}
 
-  // Allocate a trapframe page.
+ // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
@@ -202,8 +207,11 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  
   return pagetable;
 }
+
+
 
 // Free a process's page table, and free the
 // physical memory it refers to.
@@ -681,3 +689,61 @@ procdump(void)
     printf("\n");
   }
 }
+
+
+int 
+getPageFromSwapFile(struct proc *p, uint va){
+  pte_t *pte = walk(p->pagetable, va, 0);
+  int permission = *pte & (PTE_R | PTE_W | PTE_X);
+  for (int idx = 0; idx < MAX_TOTAL_PAGES; idx++)
+  {
+    if (p->isSwapped[idx] == va){
+      p->isSwapped[idx] = 0;
+      void* pa = kalloc();
+      if (readFromSwapFile(p, (char*)pa, idx*PGSIZE, PGSIZE) < PGSIZE){
+        return -1;
+      }
+      if (mappages(p->pagetable, va, PGSIZE,(uint64) pa, permission) == -1){
+        return -1;
+    }
+      p->pages_count++;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+
+
+
+//ADDED 4.2
+int 
+swapOut(){
+  struct proc* p = myproc();
+  p->pages_count++;
+
+  uint64 va = pageSwapPolicy();
+  uint64 pa = walkaddr(p->pagetable, va);
+  pte_t* entry = walk(p->pagetable, va, 0);
+  //exceed 16 pages 
+  if(p->pages_count > MAX_PSYC_PAGES){
+    if(p->swapFile == 0){
+      p->swapFile = createSwapFile(p);
+    }
+    for(int i = 0; i< MAX_TOTAL_PAGES; i++){
+      if(p->isSwapped[i] == 0){
+        p->isSwapped[i] = va;
+        if(writeToSwapFile(p,pa, i * PGSIZE, PGSIZE)< PGSIZE){
+          return -1;
+        }
+        entry = PTE_PG || p->pagetable[i];
+        entry = PTE_V && p->pagetable[i];
+        kfree((void *)pa);
+        p->pages_count--;
+        break;
+      }
+    }
+  }
+  }
+
+  
