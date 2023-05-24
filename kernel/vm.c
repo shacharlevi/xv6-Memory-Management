@@ -303,6 +303,20 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
     page = &p->pagesInPysical[freeIdx];
     page->idxIsHere=1;
     page->va=a;
+    
+    #ifdef NFUA
+    page->againg=0;
+    #endif 
+
+    #ifdef LAPA
+    page->aging=(unint64)~0;
+    #endif
+
+    #ifdef SCFIFO
+    p->helpPageTimer++;
+    page->pageCreateTime= p->helpPageTimer;
+    #endif
+    
     p->physicalPagesCount++;
     pte_t* entry = walk(pagetable, page->va, 0);
     *entry = PTE_PG & *entry; //turn off the swap bit

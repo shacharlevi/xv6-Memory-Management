@@ -97,6 +97,20 @@ usertrap(void)
         freeP=&p->pagesInPysical[freeIdx];
         freeP->idxIsHere=1;
         freeP->va=page->va;
+
+        #ifdef NFUA
+        freeP->againg=0;
+        #endif 
+
+        #ifdef LAPA
+        freeP->aging=(unint64)~0;
+        #endif
+
+        #ifdef SCFIFO
+        p->helpPageTimer++;
+        freeP->pageCreateTime= p->helpPageTimer;
+        #endif
+
         p->physicalPagesCount++;//we update our counter as well 
 
         //update our swap file array

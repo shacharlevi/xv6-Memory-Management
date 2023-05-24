@@ -124,7 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  p ->helpPageTimer=0;
  // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -177,6 +177,8 @@ freeproc(struct proc *p)
     while(page< &p->pagesInPysical[MAX_PSYC_PAGES]){
       page->idxIsHere=0;
       page->va=0;
+      page->aging=0;
+      page->pageCreateTime=0;
       page++;
     }
     
@@ -184,11 +186,14 @@ freeproc(struct proc *p)
     while(page< &p->pagesInSwap[MAX_PSYC_PAGES]){
       page->idxIsHere=0;
       page->va=0;
+      page->aging=0;
+      page->pageCreateTime=0;
       page++;
     }
   }
   p->swapPagesCount=0;
   p->physicalPagesCount=0;
+  p->helpPageTimer=0;
 
 }
 
@@ -364,6 +369,9 @@ fork(void)
     }
     np->physicalPagesCount=p->physicalPagesCount;
     np->swapPagesCount=p->swapPagesCount;
+    np->helpPageTimer=  p->helpPageTimer;
+
+
     char *space =kalloc();
     idx=0;
     //read from parent & write to child
@@ -527,6 +535,14 @@ scheduler(void)
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
+
+        #ifdef NFUA 
+        agePage();
+        #endif
+
+        #ifdef LAPA 
+        agePage();
+        #endif
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -810,6 +826,105 @@ swapOutFromPysc(pagetable_t pagetable,struct proc *p){
     return 0;
   }
 
-  int pageSwapPolicy(){
-    return 0;
+  int 
+  pageSwapPolicy(){
+    #ifdef NFUA
+    return nfua();
+    #endif 
+
+    #ifdef LAPA
+    return lapa();
+    #endif
+
+    #ifdef SCFIFO
+    return scfifo();
+    #endif
+
+    #ifdef NONE
+    return 1;
+    #endif
+    return 1;
   }
+
+
+int
+nfua(){
+struct proc *proc = myproc();
+uint64 lowest =  __UINT64_MAX__;
+int lowestIdx = 1;
+struct metaData *page = proc->pagesInPysical+1;//start from the second idx  
+while(page < &proc->pagesInPysical[MAX_PSYC_PAGES]){
+  if(page->idxIsHere && page->aging < lowest){
+    lowest = page->aging;
+    lowestIdx= (int)(page-(proc->pagesInPysical));
+  }
+  page++;
+}
+return lowestIdx;
+}
+
+int
+lafa(){
+  struct metaData *pg;
+  int minOnes = 64;
+  int minIdx = -1;
+  struct proc *p=myproc();
+
+  for (pg = p->pagesInPysical; pg < &p->pagesInPysical[MAX_PSYC_PAGES]; pg++) {
+    if (pg->idxIsHere) {
+      int ones = 0;
+      for (int i = 0; i < 64; i++) {
+        if ((pg->aging >> i) & 1) {
+          ones++;
+        }
+      }
+      if (ones < minOnes || (minIdx == -1 && ones <= minOnes)) {
+        minOnes = ones;
+        minIdx = (int)(pg - p->pagesInPysical);
+      }
+    }
+  }
+  return minIdx;
+}
+
+int 
+scfifo(){
+    struct proc *p=myproc();
+
+  struct metaData *page=p->pagesInPysical;
+  uint64 lowestCreateTime = __UINT64_MAX__;
+  int lowestCreateIdx = -1;
+
+  while (page < &p->pagesInPysical[MAX_PSYC_PAGES]) {
+    if (page->idxIsHere && page->pageCreateTime <= lowestCreateTime) {
+      lowestCreateIdx = (int)(page - p->pagesInPysical);
+      lowestCreateTime = page->pageCreateTime;
+    }
+    page++;
+  }
+
+  pte_t *pte = walk(p->pagetable, p->pagesInPysical[lowestCreateIdx].va, 0);
+  if ((*pte & PTE_A) != 0) {
+    *pte =*pte & ~PTE_A;
+    p->helpPageTimer++;
+    p->pagesInPysical[lowestCreateIdx].pageCreateTime = p->helpPageTimer;
+  }
+  return lowestCreateIdx;
+}
+
+void agePage() {
+  struct metaData *page;
+  pte_t *entry;
+  struct proc *p=myproc();
+  for (page = p->pagesInPysical; page < &p->pagesInPysical[MAX_PSYC_PAGES]; page++) {
+    if (page->idxIsHere) {
+      entry = walk(p->pagetable, page->va, 0);
+      if ((*entry & PTE_A) != 0) {
+        page->aging = (page->aging >> 1) | (1ULL << 63);
+      } else {
+        page->aging = (page->aging >> 1);
+      }
+      *entry = *entry & ~PTE_A;
+    }
+  }
+}

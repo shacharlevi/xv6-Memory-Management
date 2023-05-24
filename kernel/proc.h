@@ -34,7 +34,8 @@ extern struct cpu cpus[NCPU];
 struct metaData{
   uint64 va; 
   uint64 idxIsHere; // 0 = not in struct, 1 = in struct
-
+  uint64 pageCreateTime;          //time of adding page to pysc memory 
+  uint64 aging; 
 };
 // per-process data for the trap handling code in trampoline.S.
 // sits in a page by itself just under the trampoline page in the
@@ -130,4 +131,5 @@ struct proc
   uint64  swapPagesCount;               //count how many swap pages proc has 
   struct metaData pagesInPysical[MAX_PSYC_PAGES];
   struct metaData pagesInSwap[MAX_PSYC_PAGES];
+  uint64 helpPageTimer ;
 };

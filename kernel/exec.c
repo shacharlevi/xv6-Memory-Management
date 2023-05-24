@@ -35,6 +35,8 @@ exec(char *path, char **argv)
   if(p->pid>2){
     struct metaData *page=p->pagesInPysical;
     while(page< &p->pagesInPysical[MAX_PSYC_PAGES]){
+      page->aging=0;
+      page->pageCreateTime=0;
       page->idxIsHere=0;
       page->va=0;
       page++;
@@ -42,6 +44,8 @@ exec(char *path, char **argv)
     
     page=p->pagesInSwap;
     while(page< &p->pagesInSwap[MAX_PSYC_PAGES]){
+      page->aging=0;
+      page->pageCreateTime=0;
       page->idxIsHere=0;
       page->va=0;
       page++;
