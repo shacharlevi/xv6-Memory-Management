@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -13,6 +15,38 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+//ADDED
+void helperUnmap(uint64 a , pte_t *pte, int do_free, pagetable_t pagetable){
+  struct proc *proc= myproc();
+  struct metaData *page=proc->pagesInPysical;
+  if(do_free&& proc->pid>2 &&pagetable==proc->pagetable &&(*pte & PTE_V)){
+    while(page< & proc->pagesInPysical[MAX_PSYC_PAGES]){
+      if(page->va==a){
+        page->idxIsHere=0;
+        page->va=0;
+        proc->physicalPagesCount--;
+        break;
+      }
+      page++;
+    }
+  }
+  if(proc->pid>2 &&pagetable==proc->pagetable &&(*pte & PTE_V)){
+    page=proc->pagesInSwap;
+    while(page< & proc->pagesInSwap[MAX_PSYC_PAGES]){
+      if(page->va==a){
+        page->idxIsHere=0;
+        page->va=0;
+        proc->swapPagesCount--;
+        break;
+      }
+      page++;
+    }
+  }
+}
+
+
+
+
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -166,6 +200,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+//The uvmunmap() function is called by the user-space library when a process requests that a virtual memory region be unmapped. The function is also called by the kernel when a process terminates.
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -186,6 +221,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
+    helperUnmap( a , pte, do_free, pagetable);
     *pte = 0;
   }
 }
@@ -232,7 +268,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += PGSIZE){
-    swapOut(); //ADDED 
+    
     mem = kalloc();
     if(mem == 0){
       uvmdealloc(pagetable, a, oldsz);
@@ -244,10 +280,38 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
-    
-  }
 
+    //ADDED
+    //find a page to remove from the pysical memory 
+    //&& switch this va with new value accordind to the policy choose 
+    struct proc *p=myproc();
+    if(p->pid>2){
+      if(p->physicalPagesCount==MAX_PSYC_PAGES){
+        swapOutFromPysc(pagetable,p);
+      }
+      
+
+    //looking for free page in pysical memory for our new allocated page a. 
+    int freeIdx=0; 
+    struct metaData *page;
+    for(page = p->pagesInPysical; page < &p->pagesInPysical[MAX_PSYC_PAGES]; page++ ){
+      if(page->idxIsHere==0){
+        freeIdx=(int)(page-(p->pagesInPysical));
+        break;
+      }
+    }
+    page = &p->pagesInPysical[freeIdx];
+    page->idxIsHere=1;
+    page->va=a;
+    p->physicalPagesCount++;
+    pte_t* entry = walk(pagetable, page->va, 0);
+    *entry = PTE_PG & *entry; //turn off the swap bit
+    *entry = ~PTE_V | *entry;
+
+  }
+}
   return newsz;
+
 }
 
 // Deallocate user pages to bring the process size from oldsz to

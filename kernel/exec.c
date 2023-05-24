@@ -31,6 +31,27 @@ exec(char *path, char **argv)
   pagetable_t pagetable = 0, oldpagetable;
   struct proc *p = myproc();
 
+   //free the swap file when its not the shell& init proc 
+  if(p->pid>2){
+    struct metaData *page=p->pagesInPysical;
+    while(page< &p->pagesInPysical[MAX_PSYC_PAGES]){
+      page->idxIsHere=0;
+      page->va=0;
+      page++;
+    }
+    
+    page=p->pagesInSwap;
+    while(page< &p->pagesInSwap[MAX_PSYC_PAGES]){
+      page->idxIsHere=0;
+      page->va=0;
+      page++;
+    }
+    p->swapPagesCount=0;
+    p->physicalPagesCount=0;
+    removeSwapFile(p);
+    createSwapFile(p);
+  }
+
   begin_op();
 
   if((ip = namei(path)) == 0){

@@ -30,6 +30,12 @@ struct cpu
 
 extern struct cpu cpus[NCPU];
 
+//ADDED
+struct metaData{
+  uint64 va; 
+  uint64 idxIsHere; // 0 = not in struct, 1 = in struct
+
+};
 // per-process data for the trap handling code in trampoline.S.
 // sits in a page by itself just under the trampoline page in the
 // user page table. not specially mapped in the kernel page table.
@@ -117,7 +123,11 @@ struct proc
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
+  //ADDED
   struct file *swapFile;
-  uint  isSwapped[MAX_TOTAL_PAGES];   // addresses ;
-  uint  pages_count;                  // = 0; 
+  uint64  isSwapped[MAX_TOTAL_PAGES];     // addresses ;
+  uint64 physicalPagesCount;           //count how many phsc pages proc has 
+  uint64  swapPagesCount;               //count how many swap pages proc has 
+  struct metaData pagesInPysical[MAX_PSYC_PAGES];
+  struct metaData pagesInSwap[MAX_PSYC_PAGES];
 };

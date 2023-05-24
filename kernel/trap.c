@@ -64,21 +64,58 @@ usertrap(void)
     syscall();
     
    } else if(r_scause() == 13 || r_scause() == 15){
-    uint64 va = r_stval();
-    pte_t *entry = walk(p->pagetable, va, 0);
-    if ((*entry & PTE_PG) == 0){
+    uint64 va = r_stval();//the va of the paulting address 
+    //seg fault
+    if ((*(walk(p->pagetable, va, 0)) & PTE_PG) == 0){
       printf("usertrap(): segmentation fault %p pid=%d\n", r_scause(), p->pid);
       printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
       setkilled(p);
-    }
-    else{
-      if (bringFileFromSwapFile(p, va) == -1){
-        printf("usertrap(): failed to get page from swapFile %p pid=%d\n", r_scause(), p->pid);
-        printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-        setkilled(p);
+    } // entry in swapfile
+    else{//make some place in pysc and move to swap
+      if(p->physicalPagesCount ==MAX_PSYC_PAGES){
+        swapOutFromPysc(p->pagetable,p);
+      } 
+      char *space= kalloc();
+      uint64 newVa = PGROUNDDOWN(va);
+      for(struct metaData *page=p->pagesInSwap;page<&p->pagesInSwap[MAX_PSYC_PAGES];page++){
+        //looking for the page in swapFile and reads its content into space
+        if(page->va==newVa){
+          pte_t *entry = walk(p->pagetable, newVa, 0);
+             if (readFromSwapFile(p, space,(page-p->pagesInSwap)*PGSIZE, PGSIZE) < PGSIZE){
+              printf("error: readFromSwapFile less than PGSIZE chars in usertrap\
+              n");
+            }
+        //looking for free page in pysical memory array  for our new allocated page. its our array and we want to update it. in the memory itself we allready updated. 
+        int freeIdx=0; 
+        struct metaData *freeP;
+        for(freeP = p->pagesInPysical; freeP < &p->pagesInPysical[MAX_PSYC_PAGES]; freeP++ ){
+          if(freeP->idxIsHere==0){
+            freeIdx=(int)(freeP-(p->pagesInPysical));
+            break;
+          }
+        }
+        freeP=&p->pagesInPysical[freeIdx];
+        freeP->idxIsHere=1;
+        freeP->va=page->va;
+        p->physicalPagesCount++;//we update our counter as well 
+
+        //update our swap file array
+        p->swapPagesCount--;
+        page->idxIsHere=0;
+        page->va=0;
+        //sets pa to pte and turns its flags
+        *entry= PA2PTE((uint64)space)|PTE_FLAGS(*entry);
+        //mark that its not in swap file anymore
+        *entry=*entry & ~PTE_PG;
+        *entry=*entry | PTE_V;
+        break;
+        }
       }
+      sfence_vma();//flush to TLB
+    
     }
-  } else if((which_dev = devintr()) != 0){
+    }
+  else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
@@ -95,6 +132,7 @@ usertrap(void)
 
   usertrapret();
 }
+
 
 //
 // return to user space
