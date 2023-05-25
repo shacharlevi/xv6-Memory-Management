@@ -842,7 +842,10 @@ int createSwapFile(struct proc *p)
 // return as sys_write (-1 when error)
 int writeToSwapFile(struct proc *p, char *buffer, uint placeOnFile, uint size)
 {
+  printf("8here\n");
   p->swapFile->off = placeOnFile;
+    printf("9here\n");
+
   return kfilewrite(p->swapFile, (uint64)buffer, size);
 }
 

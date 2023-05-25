@@ -214,7 +214,6 @@ int
 kfilewrite(struct file *f, uint64 addr, int n)
 {
   int r, ret = 0;
-
   if(f->writable == 0)
     return -1;
 
@@ -233,17 +232,27 @@ kfilewrite(struct file *f, uint64 addr, int n)
     // might be writing a device like the console.
     int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
     int i = 0;
+    printf("15here\n");
     while(i < n){
       int n1 = n - i;
       if(n1 > max)
         n1 = max;
+    printf("16here\n");
 
       begin_op();
+          printf("17here\n");
+
       ilock(f->ip);
       if ((r = writei(f->ip, 0, addr + i, f->off, n1)) > 0)
         f->off += r;
+      
+      printf("18here\n");
+
       iunlock(f->ip);
+          printf("19here\n");
+
       end_op();
+    printf("20here\n");
 
       if(r != n1){
         // error from writei
@@ -251,10 +260,11 @@ kfilewrite(struct file *f, uint64 addr, int n)
       }
       i += r;
     }
+    printf("18here\n");
     ret = (i == n ? n : -1);
   } else {
     panic("filewrite");
   }
-
+printf("19here\n");
   return ret;
 }

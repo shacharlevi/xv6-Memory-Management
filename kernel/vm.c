@@ -221,7 +221,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
+    //ADDED
+    #ifndef NONE
     helperUnmap( a , pte, do_free, pagetable);
+    #endif
     *pte = 0;
   }
 }
@@ -282,6 +285,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
     }
 
     //ADDED
+    #ifndef NONE
     //find a page to remove from the pysical memory 
     //&& switch this va with new value accordind to the policy choose 
     struct proc *p=myproc();
@@ -290,42 +294,41 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
         swapOutFromPysc(pagetable,p);
       }
       
-
     //looking for free page in pysical memory for our new allocated page a. 
-    int freeIdx=0; 
-    struct metaData *page;
-    for(page = p->pagesInPysical; page < &p->pagesInPysical[MAX_PSYC_PAGES]; page++ ){
-      if(page->idxIsHere==0){
-        freeIdx=(int)(page-(p->pagesInPysical));
-        break;
+      int freeIdx=0; 
+      struct metaData *page;
+      for(page = p->pagesInPysical; page < &p->pagesInPysical[MAX_PSYC_PAGES]; page++ ){
+        if(page->idxIsHere==0){
+          freeIdx=(int)(page-(p->pagesInPysical));
+          break;
+        }
       }
+      page = &p->pagesInPysical[freeIdx];
+      page->idxIsHere=1;
+      page->va=a;
+      
+      #ifdef NFUA
+      page->againg=0;
+      #endif 
+
+      #ifdef LAPA
+      page->aging=(unint64)~0;
+      #endif
+
+      #ifdef SCFIFO
+      p->helpPageTimer++;
+      page->pageCreateTime= p->helpPageTimer;
+      #endif
+      
+      p->physicalPagesCount++;
+      pte_t* entry = walk(pagetable, page->va, 0);
+      *entry = ~PTE_PG & *entry; //turn off the swap bit
+      *entry = PTE_V | *entry;
+
     }
-    page = &p->pagesInPysical[freeIdx];
-    page->idxIsHere=1;
-    page->va=a;
-    
-    #ifdef NFUA
-    page->againg=0;
-    #endif 
-
-    #ifdef LAPA
-    page->aging=(unint64)~0;
     #endif
-
-    #ifdef SCFIFO
-    p->helpPageTimer++;
-    page->pageCreateTime= p->helpPageTimer;
-    #endif
-    
-    p->physicalPagesCount++;
-    pte_t* entry = walk(pagetable, page->va, 0);
-    *entry = PTE_PG & *entry; //turn off the swap bit
-    *entry = ~PTE_V | *entry;
-
-  }
 }
   return newsz;
-
 }
 
 // Deallocate user pages to bring the process size from oldsz to

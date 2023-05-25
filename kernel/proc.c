@@ -124,6 +124,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  //ADDED
   p ->helpPageTimer=0;
  // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -171,6 +172,7 @@ freeproc(struct proc *p)
   p->state = UNUSED;
 
   //ADDED
+  #ifndef NONE
   //free the swap file when its not the shell& init proc 
   if(p->pid>2){
     struct metaData *page=p->pagesInPysical;
@@ -191,6 +193,7 @@ freeproc(struct proc *p)
       page++;
     }
   }
+  #endif
   p->swapPagesCount=0;
   p->physicalPagesCount=0;
   p->helpPageTimer=0;
@@ -357,19 +360,21 @@ fork(void)
   //   }
   // }
   //else
-   if(p->pid >2){//dont copy init &shell 
-    createSwapFile(np);
-    idx=0;
-    while(idx<MAX_PSYC_PAGES){
-      np->pagesInPysical[idx].va=p->pagesInPysical[idx].va;
-      np->pagesInPysical[idx].idxIsHere=p->pagesInPysical[idx].idxIsHere;
-      np->pagesInSwap[idx].va=p->pagesInSwap[idx].va;
-      np->pagesInSwap[idx].idxIsHere=p->pagesInSwap[idx].idxIsHere;
-      idx++;
-    }
-    np->physicalPagesCount=p->physicalPagesCount;
-    np->swapPagesCount=p->swapPagesCount;
-    np->helpPageTimer=  p->helpPageTimer;
+  #ifndef NONE
+    if(np->pid>2)
+      createSwapFile(np);
+    if(p->pid >2){//dont copy init &shell 
+      idx=0;
+      while(idx<MAX_PSYC_PAGES){
+        np->pagesInPysical[idx].va=p->pagesInPysical[idx].va;
+        np->pagesInPysical[idx].idxIsHere=p->pagesInPysical[idx].idxIsHere;
+        np->pagesInSwap[idx].va=p->pagesInSwap[idx].va;
+        np->pagesInSwap[idx].idxIsHere=p->pagesInSwap[idx].idxIsHere;
+        idx++;
+      }
+      np->physicalPagesCount=p->physicalPagesCount;
+      np->swapPagesCount=p->swapPagesCount;
+      np->helpPageTimer=  p->helpPageTimer;
 
 
     char *space =kalloc();
@@ -382,7 +387,7 @@ fork(void)
     }
     kfree(space);
   }
-
+#endif
 
   acquire(&wait_lock);
   np->parent = p;
@@ -789,43 +794,6 @@ procdump(void)
 
 
 
-
-//ADDED 4.2
-//swap out from pysc == swap in swap file
-int 
-swapOutFromPysc(pagetable_t pagetable,struct proc *p){
-       if(p->physicalPagesCount+p->swapPagesCount==MAX_TOTAL_PAGES){
-        printf("exceeded number of possible pages\n");
-        return -1;
-      }
-      //idx of page to removed from pysical memory 
-      int idx = pageSwapPolicy(); //TODO
-      struct metaData *removedPageFromPsyc = &p->pagesInPysical[idx];
-      //looking for free struct into pagesInSwap to put the removed page
-      for(struct metaData *page = p->pagesInSwap; page < &p->pagesInSwap[MAX_PSYC_PAGES]; page++){
-        //empty space in the swapArr is found
-        if(page->idxIsHere==0){
-          page->idxIsHere = 1;
-          page->va=removedPageFromPsyc->va;
-          uint64 pa = walkaddr(pagetable, page->va);
-          pte_t* entry = walk(pagetable, page->va, 0);
-          if(writeToSwapFile(p,(char *)pa, (page-(p->pagesInSwap)) * PGSIZE, PGSIZE)< PGSIZE){
-            return -1;
-          }
-          p->swapPagesCount++;
-          kfree((void *)pa);
-          *entry = PTE_PG | *entry; //turn on the swap bit
-          *entry = ~PTE_V & *entry;//not present in pte anymore 
-          removedPageFromPsyc->idxIsHere=0;
-          removedPageFromPsyc->va=0;
-          p->physicalPagesCount--;
-          sfence_vma(); // flush to TLB
-          break;
-      }
-    }
-    return 0;
-  }
-
   int 
   pageSwapPolicy(){
     #ifdef NFUA
@@ -843,6 +811,7 @@ swapOutFromPysc(pagetable_t pagetable,struct proc *p){
     #ifdef NONE
     return 1;
     #endif
+
     return 1;
   }
 
@@ -928,3 +897,53 @@ void agePage() {
     }
   }
 }
+
+
+//ADDED 4.2
+//swap out from pysc == swap in swap file
+int 
+swapOutFromPysc(pagetable_t pagetable,struct proc *p){
+       if(p->physicalPagesCount+p->swapPagesCount==MAX_TOTAL_PAGES){
+        printf("exceeded number of possible pages\n");
+        return -1;
+      }
+        printf("2here\n");
+      //idx of page to removed from pysical memory 
+      int idx = pageSwapPolicy(); 
+      printf("choosen idx:%d\n",idx);
+      struct metaData *removedPageFromPsyc = &p->pagesInPysical[idx];
+              printf("3here\n");
+
+      //looking for free struct into pagesInSwap to put the removed page
+      for(struct metaData *page = p->pagesInSwap; page < &p->pagesInSwap[MAX_PSYC_PAGES]; page++){
+        //empty space in the swapArr is found
+          printf("4here\n");
+        if(page->idxIsHere==0){
+          page->idxIsHere = 1;
+          page->va=removedPageFromPsyc->va;
+          // uint64 pa = walkaddr(pagetable, page->va);
+          pte_t* entry = walk(pagetable, page->va, 0);
+          uint64 pa= PTE2PA(*entry);
+                    printf("5here\n");
+          uint64 off=(page-p->pagesInSwap) * PGSIZE;
+          if(writeToSwapFile(p,(char *)pa,off, PGSIZE)< PGSIZE){
+            printf("10here\n");
+            return -1;
+          }
+            printf("6here\n");
+
+          p->swapPagesCount++;
+          kfree((void *)pa);
+          *entry = PTE_PG | *entry; //turn on the swap bit
+          *entry = ~PTE_V & *entry;//not present in pte anymore 
+          removedPageFromPsyc->idxIsHere=0;
+          removedPageFromPsyc->va=0;
+          p->physicalPagesCount--;
+                              printf("7here\n");
+
+          sfence_vma(); // flush to TLB
+          break;
+      }
+    }
+    return 0;
+  }
